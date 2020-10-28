@@ -42,6 +42,7 @@ class decoder:
 		self.sample_rate = sample_rate
 
 		self.start_level = 0
+		self.decoded = []
 		# TODO: this was used for testing, clean up and write decent unit tests
 		# self.decoded = [
 		# 	0,0,0,0,1, 1,1,0,0,0,
