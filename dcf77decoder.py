@@ -29,14 +29,16 @@ Check the table at https://en.wikipedia.org/wiki/DCF77#Time_code_interpretation
 for more information.
 """
 
+import time
 import socket
+import sys
 import struct
+import RPi.GPIO as GPIO
 
 
 class decoder:
-    def __init__(self, lip, lport, sample_rate):
-        self.lip = lip
-        self.lport = lport
+    def __init__(self, pin, sample_rate):
+        self.pin = pin
         self.sample_rate = sample_rate
 
         self.start_level = 0
@@ -51,34 +53,42 @@ class decoder:
         #   0,0,0,0,0, 1,0,0,1]
         # self.decodeCdf()
 
+    def receive(self, nbytes):
+        ts = 1.0 / self.sample_rate
+        buffer = b''
+
+        print(f'receiving {nbytes}')
+        print(f'ts {ts}')
+        while True:
+            c = GPIO.input(7)
+            if c == 0:
+                c = 1
+            else:
+                c = 0
+            buffer += c.to_bytes(1, 'big')
+            time.sleep(ts)
+            #print(c, end='')
+            #sys.stdout.flush()
+            nbytes -= 1
+            if nbytes == 0:
+                break
+        return buffer
+
+    def setup_gpio(self):
+        print(GPIO.VERSION)
+        GPIO.setwarnings(True)
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(self.pin, GPIO.IN)
+
     def listen(self):
-        lip = self.lip
-        lport = self.lport
-
-        # receiving multicast in python, shamelessly stolen from
-        # https://stackoverflow.com/questions/603852/how-do-you-udp-multicast-in-python
-
-        # assert bind_group in groups + [None], \
-        #     'bind group not in groups to join'
-        sock = socket.socket(
-            socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-
-        # allow reuse of socket (to allow another instance of python to run
-        # this script binding to the same ip/port)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        sock.bind(('', lport))  # bind to any ip-address
-
-        # igmp join
-        mreq = struct.pack('4sl', socket.inet_aton(lip), socket.INADDR_ANY)
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-
         self.network_buf = []
+        self.setup_gpio()
         while True:
             # receive data
-            newbytes = sock.recv(10240)
+            newbytes = self.receive(2000)
 
-            for inbyte in struct.unpack('B'*len(newbytes), newbytes):
+            # for inbyte in struct.unpack('B'*len(newbytes), newbytes):
+            for inbyte in newbytes:
                 self.network_buf.append(inbyte)
             consumed = self.runlength_encode(self.network_buf)
             self.network_buf = self.network_buf[consumed:]
@@ -101,7 +111,8 @@ class decoder:
                 self.start_level = value
                 start_pos = pos
                 toRemove += pos
-            except ValueError:
+            except ValueError as err:
+                print(err)
                 # need more data
                 return toRemove
 
@@ -122,11 +133,14 @@ class decoder:
     def decodeCdf(self):
         if len(self.decoded) != 59:
             return
-
+        else:
+            print('good length')
+        print(f'decoded {self.decoded}')
         self.checkParity1()
         self.checkParity2()
         self.checkParity3()
 
+        print('after parity')
         tz = self.parseTz()
         m = self.parseMinutes()
         h = self.parseHours()
@@ -232,10 +246,9 @@ class decoder:
 
 
 def Main():
-    ipaddr = "225.0.0.1"
-    port = 10000
-    sample_rate = 1200
-    d = decoder(lip=ipaddr, lport=port, sample_rate=sample_rate)
+    gpio_pin = 7
+    sample_rate = 100
+    d = decoder(pin=gpio_pin, sample_rate=sample_rate)
     d.listen()
 
 
