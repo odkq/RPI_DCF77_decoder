@@ -1,13 +1,9 @@
-import sys
-
-# python version check
-if sys.version_info.major < 3:
-    raise RuntimeError("Python3 or newer required")
-#end if
-
+#!/usr/bin/env python
 """
 DCF77 decoder
 (c) Jan Willem ON6LM
+
+Modified to work with a RPI GPIO <pablo@odkq.com>
 
 This software is open-source licensed under the GPL3.0-or-later license:
 https://www.gnu.org/licenses/gpl-3.0-standalone.html
@@ -21,19 +17,21 @@ Given the sample rate, it will then decode the time.
 This will read from a udp multicast address by default, which makes
 it easy to work with.
 
-For decoding the byte stream, it will first get converted to run length encoding,
-to make it easier to work with. Given the sample rate, it will then search for the
-longer gap of '1' which indicates the start of the message. A short (~100ms) burst
-of '0' means a logical 0, a burst of ~200ms means a logical 1.
+For decoding the byte stream, it will first get converted to run length
+encoding, to make it easier to work with. Given the sample rate, it will then
+search for the longer gap of '1' which indicates the start of the message. A
+short (~100ms) burst of '0' means a logical 0, a burst of ~200ms means a
+logical 1.
 
 After that conversion, it's just a matter of decoding the bitpattern.
 
-Check the table at https://en.wikipedia.org/wiki/DCF77#Time_code_interpretation for
-more information.
+Check the table at https://en.wikipedia.org/wiki/DCF77#Time_code_interpretation
+for more information.
 """
 
 import socket
 import struct
+
 
 class decoder:
     def __init__(self, lip, lport, sample_rate):
@@ -62,24 +60,25 @@ class decoder:
 
         # assert bind_group in groups + [None], \
         #     'bind group not in groups to join'
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock = socket.socket(
+            socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
 
-        # allow reuse of socket (to allow another instance of python to run this
-        # script binding to the same ip/port)
+        # allow reuse of socket (to allow another instance of python to run
+        # this script binding to the same ip/port)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        sock.bind(('',lport)) # bind to any ip-address
+        sock.bind(('', lport))  # bind to any ip-address
 
-        #igmp join
-        mreq=struct.pack('4sl',socket.inet_aton(lip),socket.INADDR_ANY)
-        sock.setsockopt(socket.IPPROTO_IP,socket.IP_ADD_MEMBERSHIP,mreq)
+        # igmp join
+        mreq = struct.pack('4sl', socket.inet_aton(lip), socket.INADDR_ANY)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
-        self.network_buf=[]
+        self.network_buf = []
         while True:
-            #receive data
+            # receive data
             newbytes = sock.recv(10240)
 
-            for inbyte in struct.unpack('B'*len(newbytes),newbytes):
+            for inbyte in struct.unpack('B'*len(newbytes), newbytes):
                 self.network_buf.append(inbyte)
             consumed = self.runlength_encode(self.network_buf)
             self.network_buf = self.network_buf[consumed:]
@@ -102,7 +101,7 @@ class decoder:
                 self.start_level = value
                 start_pos = pos
                 toRemove += pos
-            except ValueError as err:
+            except ValueError:
                 # need more data
                 return toRemove
 
@@ -144,7 +143,8 @@ class decoder:
             return 'CEST'
         if cetFlag:
             return 'CET'
-        raise ValueError("Could not parse timezone, got %d and %d as tz bits" % (cestFlag, cetFlag))
+        fmt = "Could not parse timezone, got %d and %d as tz bits"
+        raise ValueError(fmt % (cestFlag, cetFlag))
 
     def parseMinutes(self):
         minutes = 0
@@ -195,7 +195,8 @@ class decoder:
         month += self.decoded[47] * 4
         month += self.decoded[48] * 8
         month += self.decoded[49] * 10
-        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
         if month < 1 or month > 12:
             raise ValueError('Invalid month: %d' % month)
 
@@ -229,11 +230,14 @@ class decoder:
         if parity % 2 != self.decoded[58]:
             raise ValueError('Parity error P3')
 
+
 def Main():
-    ipaddr="225.0.0.1"
-    port=10000
-    sample_rate=1200
-    d = decoder(lip=ipaddr,lport=port,sample_rate=sample_rate)
+    ipaddr = "225.0.0.1"
+    port = 10000
+    sample_rate = 1200
+    d = decoder(lip=ipaddr, lport=port, sample_rate=sample_rate)
     d.listen()
 
-if __name__ == "__main__": Main()
+
+if __name__ == "__main__":
+    Main()
